@@ -1,60 +1,48 @@
+#include <stdio.h>
 #include <string.h>
-#include <ctype.h>
 #include "http.h"
-
-#define BUFFER_SIZE 4096
-
-int readline(http_read_t read, void *data, char *buffer, size_t buffer_size) {
-    int i = 0;
-    while (i < BUFFER_SIZE) {
-        char c;
-        int r = read(data, &c, sizeof(c));
-        if (r <= 0) {
-            return -1;
-        }
-        if (c == '\n') {
-            break;
-        }
-        buffer[i++] = c;
-    }
-    if (i > 0 && buffer[i - 1] == '\r') {
-        i--;
-    }
-    buffer[i] = '\0';
-    return i;
-}
+#include "http_request.h"
 
 int http_handler(http_read_t read, http_write_t write, void *data) {
-    char buffer[BUFFER_SIZE];
-    int buf_len = readline(read, data, buffer, sizeof(buffer));
-    if (buf_len <= 0) {
+
+    http_request_t *request = http_request_parse(read, data);
+    if (!request) {
         return -1;
     }
-    char *method_beg = buffer;
-    char *method_end = strchr(method_beg, ' ');
-    if (!method_end) {
+    printf("method = %s\n", request->method);
+    printf("url = %s\n", request->url);
+    printf("protocol = %s\n", request->protocol);
+    printf("host = %s\n", request->host);
+
+    if (strcmp("GET", request->method) != 0) {
+        http_request_destroy(request);
         return -1;
     }
+    int protocol_major, protocol_minor;
 
-    printf("method = %s\n", strndup(method_beg, method_end - method_beg));
-
-    char *url_beg = method_end + 1;
-    while (isspace(url_beg)) {
-        url_beg++;
-    }
-    char *url_end = strchr(url_beg, ' ');
-    if (!url_end) {
+    if (sscanf(request->protocol, "HTTP/%d.%d", &protocol_major, &protocol_minor) != 2) {
+        http_request_destroy(request);
         return -1;
     }
-    printf("url = %s\n", strndup(url_beg, url_end - url_beg));
-
-    char *protocol_beg = url_end + 1;
-    while (isspace(url_beg)) {
-        url_beg++;
+    if (protocol_major != 1 || (protocol_minor != 0 && protocol_minor != 1)) {
+        http_request_destroy(request);
+        return -1;
     }
-    char *protocol_end = buffer + buffer_len;
+    //filename = root + host + url
 
-    printf("protocol = %s\n", strndup(protocol_beg, protocol_beg - protocol_end));
+    char *host = request->host;
+    if (!host) {
+        host = "localhost";
+    }
+    char *url = request->url;
+    size_t url_len = strlen(request->url);
+    if (url_len == 1 && *request->url == '/') {
+        url = "/index.html";
+        url_len = strlen(url);
+    }
+
+
+    http_request_destroy(request);
 
     return 0;
 }
